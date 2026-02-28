@@ -1,15 +1,37 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { ConsumerService } from '@ecommerce/common';
 import { Review } from './entities/review.entity';
 import { CreateReviewDto, UpdateReviewDto } from './dto/review.dto';
+import { EventType, ShippingDeliveredEvent, EcommerceEvent } from '@ecommerce/common';
 
 @Injectable()
-export class ReviewsService {
+export class ReviewsService implements OnModuleInit {
+  private readonly logger = new Logger(ReviewsService.name);
+
   constructor(
     @InjectRepository(Review)
     private reviewsRepository: Repository<Review>,
+    private consumerService: ConsumerService,
   ) {}
+
+  async onModuleInit() {
+    this.consumerService.registerHandler(EventType.SHIPPING_DELIVERED, this.handleShippingDelivered.bind(this));
+    this.logger.log('Review service initialized, registered SHIPPING_DELIVERED handler');
+  }
+
+  private async handleShippingDelivered(event: EcommerceEvent): Promise<void> {
+    const shippingEvent = event as ShippingDeliveredEvent;
+    this.logger.log(`Order delivered: ${shippingEvent.data.orderId}, user: ${shippingEvent.data.userId}`);
+    
+    // In a real app, you might want to:
+    // 1. Send a notification asking for review
+    // 2. Store pending reviews to be submitted
+    // 3. Trigger email with review link
+    
+    this.logger.log(`Review request queued for user ${shippingEvent.data.userId} for order ${shippingEvent.data.orderId}`);
+  }
 
   async create(createReviewDto: CreateReviewDto): Promise<Review> {
     const review = this.reviewsRepository.create(createReviewDto);

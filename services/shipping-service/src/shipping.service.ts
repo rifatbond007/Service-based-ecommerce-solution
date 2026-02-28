@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, Logger, OnModuleInit } from '@nestjs/common';
 import { PublisherService, ConsumerService } from '@ecommerce/common';
-import { EventType, OrderCreatedEvent, PaymentCompletedEvent, ShippingCreatedEvent, EcommerceEvent } from '@ecommerce/common';
+import { EventType, PaymentCompletedEvent, ShippingCreatedEvent, ShippingDeliveredEvent, EcommerceEvent } from '@ecommerce/common';
 
 export interface Shipment {
   id: string;
@@ -88,9 +88,27 @@ export class ShippingService implements OnModuleInit {
 
   async updateStatus(id: string, status: Shipment['status']): Promise<Shipment> {
     const shipment = await this.findById(id);
+    const previousStatus = shipment.status;
     shipment.status = status;
     shipment.updatedAt = new Date();
     this.shipments.set(shipment.id, shipment);
+
+    if (status === 'delivered' && previousStatus !== 'delivered') {
+      const deliveredEvent: ShippingDeliveredEvent = {
+        type: EventType.SHIPPING_DELIVERED,
+        timestamp: new Date(),
+        correlationId: this.publisherService.generateCorrelationId(),
+        data: {
+          orderId: shipment.orderId,
+          userId: shipment.userId,
+          trackingNumber: shipment.trackingNumber!,
+        },
+      };
+
+      await this.publisherService.publish(deliveredEvent);
+      this.logger.log(`Shipment delivered for order: ${shipment.orderId}, event published`);
+    }
+
     return shipment;
   }
 
