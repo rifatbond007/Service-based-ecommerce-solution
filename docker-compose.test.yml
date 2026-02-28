@@ -1,0 +1,141 @@
+version: '3.8'
+
+services:
+  postgres-test:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: test
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis-test:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_test_data:/data
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq-test:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "5673:5672"
+      - "15673:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: test
+      RABBITMQ_DEFAULT_PASS: test
+    volumes:
+      - rabbitmq_test_data:/var/lib/rabbitmq
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  user-service-test:
+    build:
+      context: ./services/user-service
+      dockerfile: Dockerfile
+    environment:
+      - NODE_ENV=test
+      - PORT=3001
+      - DB_HOST=postgres-test
+      - DB_PORT=5432
+      - DB_USERNAME=test
+      - DB_PASSWORD=test
+      - DB_NAME=test
+      - JWT_SECRET=test-secret
+      - JWT_EXPIRATION=1h
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+    networks:
+      - test-network
+    command: npm run test
+
+  product-service-test:
+    build:
+      context: ./services/product-service
+      dockerfile: Dockerfile
+    environment:
+      - NODE_ENV=test
+      - PORT=3002
+      - DB_HOST=postgres-test
+      - DB_PORT=5432
+      - DB_USERNAME=test
+      - DB_PASSWORD=test
+      - DB_NAME=test
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+    networks:
+      - test-network
+    command: npm run test
+
+  order-service-test:
+    build:
+      context: ./services/order-service
+      dockerfile: Dockerfile
+    environment:
+      - NODE_ENV=test
+      - PORT=3003
+      - DB_HOST=postgres-test
+      - DB_PORT=5432
+      - DB_USERNAME=test
+      - DB_PASSWORD=test
+      - DB_NAME=test
+      - RABBITMQ_URL=amqp://test:test@rabbitmq-test:5672
+      - JWT_SECRET=test-secret
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      rabbitmq-test:
+        condition: service_healthy
+    networks:
+      - test-network
+    command: npm run test
+
+  cart-service-test:
+    build:
+      context: ./services/cart-service
+      dockerfile: Dockerfile
+    environment:
+      - NODE_ENV=test
+      - PORT=3004
+      - REDIS_HOST=redis-test
+      - REDIS_PORT=6379
+      - JWT_SECRET=test-secret
+    depends_on:
+      redis-test:
+        condition: service_healthy
+    networks:
+      - test-network
+    command: npm run test
+
+volumes:
+  postgres_test_data:
+  redis_test_data:
+  rabbitmq_test_data:
+
+networks:
+  test-network:
+    driver: bridge
